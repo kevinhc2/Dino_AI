@@ -115,8 +115,13 @@ class Ptero(pygame.sprite.Sprite):
         self.ptero_sprites = [pygame.transform.scale(ptero_flying_1, (84, 62)), pygame.transform.scale(ptero_flying_2, (84, 62))]
         self.state_index = 0
         self.image = self.ptero_sprites[self.state_index]
-
-        self.rect = self.image.get_rect(center=(1380, random.choice([550, 600, 650])))
+        self.height = random.randint(0, 2)
+        if self.height == 0:
+            self.rect = self.image.get_rect(center=(1380, 550))
+        elif self.height == 1:
+            self.rect = self.image.get_rect(center=(1380, 600))
+        else:
+            self.rect = self.image.get_rect(center=(1380, 650))
 
     def animation_state(self):
         self.state_index += 0.1
@@ -165,7 +170,7 @@ def check_collision(sprite, pteros, cacti):
 def euclid_dist(a, b):
     dx = a.rect.x - b.rect.x
     dy = a.rect.y - b.rect.y
-    return math.sqrt(dx**2 + dy**2)
+    return math.sqrt(dx**2 + dy**2)/(100)
 
 def get_params(player, pteros, cacti):
     # dist to next, height of obstacle, width of obstacle, obstacle y pos, bird height, speed, players y pos, gap between obstacles
@@ -186,15 +191,15 @@ def get_params(player, pteros, cacti):
             obj_type = 0
         else:
             obj_type = 1
-        obs_height = near_obj_sprite.image.get_height()
-        obs_width = near_obj_sprite.image.get_width()
+        obs_height = near_obj_sprite.image.get_height()/100
+        obs_width = near_obj_sprite.image.get_width()/100
         
         if len(ptero_dists) > 0:
             ptero_dists.sort(key=lambda x: x[0])
             _, bird_sprite = ptero_dists[0]
-            bird_height = bird_sprite.rect.y
+            bird_height = bird_sprite.height
         else:
-            bird_height = 0
+            bird_height = -1
 
     else:
         return [0, 0, 0, 0, 0]
@@ -247,10 +252,6 @@ def eval_genomes(genomes, config):
             if event.type == cloud_timer:
                 cloud_group.add(Cloud(random.randint(240, 480)))
             if event.type == obstacle_timer:
-                # print(enemy_spawn_wait)
-                # if enemy_spawn_wait > 500:
-                #     enemy_spawn_wait = int(enemy_spawn_wait * (0.99 ** (game_speed/start_speed)))
-                #     pygame.time.set_timer(obstacle_timer, enemy_spawn_wait)
                 if pygame.time.get_ticks()-start_time > 10000:
                     spawn = random.randint(1, 10)
                     if  spawn <= 6:
@@ -295,8 +296,8 @@ def eval_genomes(genomes, config):
             for dino in players:
                 dino[3].draw(display)
                 params = get_params(dino[3].sprite, ptero_group.sprites(), cacti_group.sprites())
-                params.append(game_speed)
-                params.append(dino[3].sprite.rect.y)
+                params.append(1/(1+math.exp(-1*(game_speed/start_speed))))
+                params.append(dino[3].sprite.rect.y/240)
                 out = dino[2].activate(params)
                 # print(dino[0], out)
                 action = out.index(max(out))
