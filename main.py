@@ -12,6 +12,7 @@ import random
 import neat
 import os
 import math
+import visualize
 
 pygame.init()
 display = pygame.display.set_mode((1280, 720))
@@ -25,10 +26,13 @@ ground = pygame.image.load('assets/ground.png').convert_alpha()
 ground_height = 40
 ground = pygame.transform.scale(ground, (1280, ground_height))
 
+num_gens = 0
+high_score = 0
+
 class Cloud(pygame.sprite.Sprite):
     def __init__(self, start_y):
         super().__init__()
-        self.image = pygame.image.load(r'C:\Users\kchon\Documents\Github\Dino_AI\assets\cloud.png').convert_alpha()
+        self.image = pygame.image.load('assets/cloud.png').convert_alpha()
         self.image = pygame.transform.scale(self.image, (200, 80))
         self.rect = self.image.get_rect(bottomleft=(1280, start_y))
 
@@ -156,71 +160,87 @@ class Cactus(pygame.sprite.Sprite):
         if self.rect.x <= -100:
             self.kill()
 
-def display_score(score):
+def display_score(score, num_bots):
     font = pygame.font.Font("./assets/PressStart2P-Regular.ttf", 24)
     score_surf = font.render(f'Score: {(int(score/10)):07}', True, (128, 128, 128))
     score_rect = score_surf.get_rect(topright = (1270,10))
+    hi_surf = font.render(f'High Score: {(int(high_score/10)):07}', True, (128, 128, 128))
+    hi_rect = hi_surf.get_rect(topright = (1270,60))
+    gen_surf = font.render(f'Generation: {(num_gens):02}', True, (128, 128, 128))
+    gen_rect = gen_surf.get_rect(topleft = (10,10))
+    alive_surf = font.render(f'Alive: {(num_bots):02}', True, (128, 128, 128))
+    alive_rect = gen_surf.get_rect(topleft = (10,60))
+    display.blit(gen_surf, gen_rect)
     display.blit(score_surf, score_rect)
+    display.blit(alive_surf, alive_rect)
+    display.blit(hi_surf, hi_rect)
 
 def check_collision(sprite, pteros, cacti):
 	if pygame.sprite.spritecollide(sprite, pteros, False) or pygame.sprite.spritecollide(sprite, cacti, False):
 		return True
 	return False
 
-def euclid_dist(a, b):
-    dx = a.rect.x - b.rect.x
-    dy = a.rect.y - b.rect.y
-    return math.sqrt(dx**2 + dy**2)/(100)
+def euclid_dist(player, object):
+    dx = player.rect.x - object.rect.x
+    dy = player.rect.y - object.rect.y
+    return math.sqrt(dx**2 + dy**2)/100
+
+def get_closest_obj(player, objects):
+    if len(objects) == 0:
+        return (-1, None)
+    min = (euclid_dist(player, objects[0]), objects[0])
+    for obj in objects:
+        dist = euclid_dist(player, obj)
+        if dist < min[0]:
+            min = (dist, obj)
+    return min
 
 def get_params(player, pteros, cacti):
-    # dist to next, height of obstacle, width of obstacle, obstacle y pos, bird height, speed, players y pos, gap between obstacles
-    ptero_dists = []
-    for ptero in pteros:
-        ptero_dists.append((euclid_dist(player, ptero), ptero))
-
-    cactus_dists = []
-    for cactus in cacti:
-        cactus_dists.append((euclid_dist(player, cactus), cactus))
-
-    objs = ptero_dists + cactus_dists
-    if len(objs) > 0:
-        objs.sort(key=lambda x: x[0])
-        near_obj_dist, near_obj_sprite = objs[0]
-        obj_type = -1
-        if near_obj_sprite in cacti:
-            obj_type = 0
-        else:
-            obj_type = 1
-        obs_height = near_obj_sprite.image.get_height()/100
-        obs_width = near_obj_sprite.image.get_width()/100
-        
-        if len(ptero_dists) > 0:
-            ptero_dists.sort(key=lambda x: x[0])
-            _, bird_sprite = ptero_dists[0]
-            bird_height = bird_sprite.height
-        else:
-            bird_height = -1
-
-    else:
-        return [0, 0, 0, 0, 0]
-
-    return [near_obj_dist, obs_height, obs_width, bird_height, obj_type]
+    near_dist, near_obj = get_closest_obj(player, (pteros + cacti))
+    obs_height = 0
+    obs_width = 0
+    # ptero_height = -1
+    obj_y = -1
+    obj_class = -1
+    if near_obj != None:
+        obs_height = near_obj.image.get_height()/100
+        obs_width = near_obj.image.get_width()/100
+        obj_y = near_obj.rect.y/720
+        # if len(pteros) != 0:
+        #     _, near_ptero = get_closest_obj(player, pteros)
+        #     ptero_height = near_ptero.height
+        if near_obj in pteros:
+            obj_class = 0
+        elif near_obj in cacti:
+            obj_class = 1
     
+    # return [near_dist, obs_height, obs_width, ptero_height, obj_class]
+    return [near_dist, obs_height, obs_width, obj_y, obj_class]
+
+def ducking_score(dino, ptero, out):
+    if ptero.height == 0:
+        if (dino.rect.x + dino.image.get_width()) > ptero.rect.x and dino.rect.x < (ptero.rect.x + ptero.image.get_width()):
+            if out == 2:
+                return 100
+            else:
+                return -100
+    return 0
+
 def eval_genomes(genomes, config):
-    global display, game_speed, ground
+    global display, game_speed, ground, num_gens, high_score
     ground_1 = ground.copy()
     ground_2 = ground.copy()
     sky = pygame.Surface((1280, 720))
     sky.fill((0, 0, 0))
 
-    players = []
+    dino_bots = []
 
     for genome_id, genome in genomes:
         genome.fitness = 0
         net = neat.nn.FeedForwardNetwork.create(genome, config)
         sprite = pygame.sprite.GroupSingle()
         sprite.add(Player())
-        players.append((genome_id, genome, net, sprite))
+        dino_bots.append((genome_id, genome, net, sprite))
 
     start_speed = 10
     game_speed = start_speed
@@ -245,7 +265,7 @@ def eval_genomes(genomes, config):
     start_time = pygame.time.get_ticks()
 
     # Game Loop
-    while len(players) > 0:
+    while len(dino_bots) > 0:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 exit()
@@ -262,14 +282,21 @@ def eval_genomes(genomes, config):
                     spawn = random.randint(1, 6)
                     cacti_group.add(Cactus(spawn))
 
-        players = [p for p in players if check_collision(p[3].sprite, ptero_group, cacti_group) == False]
+        for bot in dino_bots:
+            if check_collision(bot[3].sprite, ptero_group, cacti_group):
+                bot[1].fitness -= 500
+                if high_score >= 1000000:
+                    bot[1].fitness = high_score
+                dino_bots.remove(bot)
 
-        if len(players) > 0:
+        if len(dino_bots) > 0:
             game_speed += .0025
             score += game_speed
+            if score > high_score:
+                high_score = score
 
-            for i in range(len(players)):
-                players[i][1].fitness = score/10
+            for bot in dino_bots:
+                bot[1].fitness += game_speed
 
             display.blit(sky, (0, 0))
 
@@ -293,25 +320,31 @@ def eval_genomes(genomes, config):
             ptero_group.draw(display)
             ptero_group.update()
 
-            for dino in players:
-                dino[3].draw(display)
-                params = get_params(dino[3].sprite, ptero_group.sprites(), cacti_group.sprites())
-                params.append(1/(1+math.exp(-1*(game_speed/start_speed))))
-                params.append(dino[3].sprite.rect.y/240)
-                out = dino[2].activate(params)
-                # print(dino[0], out)
-                action = out.index(max(out))
-                dino[3].update(action)
+            for bot in dino_bots:
+                bot[3].draw(display)
+                params = get_params(bot[3].sprite, ptero_group.sprites(), cacti_group.sprites())
 
-            display_score(score)
+                params.append((game_speed-start_speed)/start_speed)
+                params.append(bot[3].sprite.rect.y/720)
+                params.append(0.3)
+                out = bot[2].activate(params)
+
+                # print(bot[0], out)
+
+                action = out.index(max(out))
+                if len(ptero_group.sprites()) > 0:
+                    _, closest_ptero = get_closest_obj(bot[3].sprite, ptero_group.sprites())
+                    bot[1].fitness += ducking_score(bot[3].sprite, closest_ptero, action)
+                bot[3].update(action)
+
+            display_score(score, len(dino_bots))
 
             pygame.display.update()
 
             clock.tick(60)
         else:
             game_speed = 0
-    for genome_id, genome in genomes:
-        print(genome_id, genome.fitness)
+    num_gens += 1
 
 def run(config_file):
     # loading NEAT config settings
@@ -320,8 +353,17 @@ def run(config_file):
                          config_file)
     # Create the initial population (top-level obj for a run of NEAT)
     p = neat.Population(config)
-
+    stats = neat.StatisticsReporter()
+    p.add_reporter(stats)
     winner = p.run(eval_genomes, 50)
+    node_names = {-1: 'near_obj_dist', -2: 'obs_height', -3: 'obs_width',
+                   -4: 'bird_height', -5: 'obj_type', -6: 'game_speed', 
+                   -7: 'dino_y', -8: 'bias', 0: 'big_jump', 
+                   1: 'small_jump', 2: 'duck'}
+    visualize.draw_net(config, winner, True, node_names=node_names)
+    visualize.draw_net(config, winner, True, node_names=node_names)
+    visualize.plot_stats(stats, ylog=False, view=True)
+    visualize.plot_species(stats, view=True)   
 
     pygame.quit()
 
