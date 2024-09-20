@@ -285,8 +285,8 @@ def eval_genomes(genomes, config):
         for bot in dino_bots:
             if check_collision(bot[3].sprite, ptero_group, cacti_group):
                 bot[1].fitness -= 500
-                if high_score >= 1000000:
-                    bot[1].fitness = high_score
+                if high_score >= 30000:
+                    bot[1].fitness = 1000000
                 dino_bots.remove(bot)
 
         if len(dino_bots) > 0:
